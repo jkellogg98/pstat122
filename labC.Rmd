@@ -1,0 +1,219 @@
+---
+title: "PSTAT122 Fall2018 LabC"
+author: "Jasmine Kellogg 4266367"
+date: "12/5/2018"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+#install.packages("dplyr")
+library(knitr)
+library(tibble)
+library(magrittr)
+library(dplyr)
+library(kableExtra)
+
+```
+
+
+## 1. Jet Turbine Aircraft Components
+### a. Sign Table
+
+Using the data.frame() function, I manually inputed the values and created a dataframe. Using k = 4, r = 2, and rep_size = 16, I was able to construct the sign table. 
+```{r}
+design <- c("( 1 )", "( a )", "( b )", "(ab)",
+            "( c )", "(ac)", "(bc)", "(abc)", 
+            "( d )", "(ad)", "(bd)", "(abd)",
+            "( cd )", "(acd)", "(bcd)", "(abcd)")
+set.seed(1203)
+rep.data <- data.frame(trt = design, Rep_1 = c(7.037,14.707,11.635,17.273,10.403,4.368,9.360,13.440,8.561,16.867,13.876,19.824,11.846,6.125,11.190,15.653), Rep_2 = c(6.376,15.219,12.089,17.815,10.151,4.098,9.253,12.923,8.951,17.052,13.658,19.639,12.337,5.904,10.935,15.053))
+kable(rep.data) %>% 
+        kable_styling(full_width = F, position = "left") %>%
+        kable_styling("striped") 
+        
+k = 4; r = 2; block_size = 1; rep_size = 16
+signtable <- data.frame(trt.comb = design)
+signtable$A <- c(-1, 1, -1, 1, -1, 1, -1, 1, 
+                 -1, 1, -1, 1, -1, 1, -1, 1)
+signtable$B <- c(-1, -1, 1, 1, -1, -1, 1, 1,
+                 -1, -1, 1, 1, -1, -1, 1, 1)
+signtable$C <- c(-1, -1, -1, -1, 1, 1, 1, 1,
+                 -1, -1, -1, -1, 1, 1, 1, 1)
+signtable$D <- c(-1, -1, -1, -1, -1, -1, -1, -1,
+                 1, 1, 1, 1, 1, 1, 1, 1)
+signtable <- signtable %>%
+        mutate(AB = A*B, AC = A*C, AD = A*D, BD = B*D, BC = B*C, CD = C*D) %>%
+        mutate(ABC = A*B*C, ABD = A*B*D, ACD = A*C*D, BCD = B*C*D) %>%
+        mutate(ABCD = A*B*C*D) %>% as.tibble()
+kable(signtable) %>% kable_styling("striped", full_width=FALSE)
+```
+
+
+### b. Total Effects and Factor Effects  
+
+I used the formulas given in lecture to compute the total yields, total effects, and main effects for each factor and each value is given below. 
+```{r}
+total_yield = rep.data$Rep_1 + rep.data$Rep_2
+total.effect_X = apply(signtable[,-1], 2, function(x) x%*%total_yield)
+main.effect_X = round(total.effect_X/2^(k-1)/r, 4)
+tibble(effect.name = names(total.effect_X), total.effect_X = total.effect_X, main.effect_X = main.effect_X)
+```
+
+### ANOVA by Hand 
+
+Using the formulas for SS_X, SS_total, SS_Rep, and SS_E, I was able to manually compute all of the SS values as well as MS values and put them into a table. 
+
+```{r}
+head(rep.data)
+SS_X = round((total.effect_X^2/2^k/r),4)
+grand_total = sum(total_yield)
+SS_total = (2^k*r-1) * var(total_yield)
+replicate_sum1 <- sum(rep.data$Rep_1)
+replicate_sum2 <- sum(rep.data$Rep_2)
+SS_Rep = (sum(replicate_sum1^2 + replicate_sum2^2)/rep_size) - (grand_total^2/(2^k*r))
+SS_total = sum(rep.data$Rep_1^2 + rep.data$Rep_2^2) - (grand_total^2/32)
+SS_E = SS_total - (SS_Rep + sum(SS_X))
+pvalue = pf(q = (SS_X/1)/(1.2827/15), df1 = 1, df2 = 15)
+ANOVA.manual <- data.frame(VarSource = c(names(total.effect_X), "SS_Rep", "error", "total"), df = c(rep(1,15),1,15,31), SS = c(SS_X, SS_Rep, SS_E,SS_total)) %>%
+        mutate(MS = (SS/df)) %>%
+        mutate(F_obs = (MS/(SS_E/15))) %>%
+        mutate(Pvalue = pf(F_obs, df1 = 1, df2 = 15, lower.tail = F))
+ANOVA.manual$F_obs[17:18] = NA
+ANOVA.manual$Pvalue[17:18] = NA
+ANOVA.manual$MS[18] = NA
+print(ANOVA.manual, digits = 4)
+```
+
+### c. ANOVA by R
+
+By creating a dataframe with the + and - values for each factor and binding the values from Replicate 1 and Replicate 2, I fit a model with 4 factors and created the corresponding ANOVA table.   
+
+
+```{r}
+treat.combi <- data.frame(A = c(-1, 1, -1, 1, -1, 1, -1, 1, 
+                 -1, 1, -1, 1, -1, 1, -1, 1), B = c(-1, -1, 1, 1, -1, -1, 1, 1,
+                 -1, -1, 1, 1, -1, -1, 1, 1), C = c(-1, -1, -1, -1, 1, 1, 1, 1,
+                 -1, -1, -1, -1, 1, 1, 1, 1), D = c(-1, -1, -1, -1, -1, -1, -1, -1,
+                 1, 1, 1, 1, 1, 1, 1, 1))
+rep.1 <- data.frame(treat.combi, y = c(7.037,14.707,11.635,17.273,10.403,4.368,9.360,13.440,8.561,16.867,13.876,19.824,11.846,6.125,11.190,15.653))
+rep.2 <- data.frame(treat.combi, y = c(6.376,15.219,12.089,17.815,10.151,4.098,9.253,12.923,8.951,17.052,13.658,19.639,12.337,5.904,10.935,15.053))
+rep.bind = rbind(rep.1,rep.2)
+data.all2 <- data.frame(rep.bind, rep = rep(c(1,2), each = 16))
+fit1 <- lm(y ~ A*B*C*D + rep, data = data.all2)
+anova(fit1)
+```
+
+As we can see, the values from the table in part B match the values from the R generated table in part C.
+
+### d. Significance of Factors 
+By looking at the total effects found in part B, the factors A, B, C, D, AB, AC, and ABC appear to have large effects on the model. By looking at their corresponding p-values in the ANOVA table, all of the values are < 0.0001. Thus, they are smaller than $\alpha = 0.05$ we can conclude that they are significant.  
+
+
+### e. Residual Analysis 
+```{r}
+fit1$residuals
+plot(fit1)
+hist(fit1$residuals, xlab = "Residuals", main = "Histogram of Residuals" )
+```
+
+
+I used the plot() function to plot test the residuals. By looking at the Residuals vs Fitted plot, there is no clear pattern in the data points, the distribution is smooth indicating that the variance is constant. However, in analyzing the QQ Plot, there is very clearly some skewing on both ends of the QQ Line. This indicates that the the distribution of the data is *not* Normal. This non-normality was confirmed by the Histogram of the Residuals. Finally, there appear to be a few outliers at points 1, 17, and 20. We could consider removing these outliers from the data as well as using a transformation to correct non-normality of residuals.
+
+
+
+## 2. Continuation of Problem 1
+
+### a. (2^4,2) Design 
+
+I decided to have ABCD confounded in Replicate I and ABC confounded in Replicate II. Using the methods discussed in lecture, I found the key blocks and "other" blocks for each replicate. The blocks are as follows. 
+
+```{r}
+obser.table <- data.frame(R1block1 = c("( 1 )", "ab", "ac", "bc", "ad", "bd", "cd", "abcd"), value1 = c(7.037, 17.273, 4.368, 9.360, 16.867, 13.876, 11.846, 15.653),
+                          R1block2 = c("a", "b", "c", "d","abc","abd","acd","bcd"), value2 = c(14.707, 11.635, 10.403, 8.561, 13.440, 19.824, 6.125, 11.190),
+                          R2block1 = c("( 1 )", "ab", "ac", "bc", "d", "abd", "acd", "bcd"), value3 = c(6.376, 17.815, 4.098, 9.253, 8.951, 19.639, 5.904, 10.935),
+                          R2block2 = c("a", "b", "c", "abc", "ad", "bd", "cd", "abcd"), value4 = c(15.219, 12.089, 10.151, 12.923, 17.052, 13.658, 12.337, 15.053))
+kable(obser.table) %>% 
+        kable_styling(full_width = F, position = "left") %>%
+        kable_styling("striped") %>%
+        add_header_above(c( "Replicate I ABCD Conf." = 4, "Replicate II ABC Conf." = 4))
+
+```
+The design has 2^1 blocks per replicate and 2^3 treatments per block.
+
+
+### b. Reconstruction of ANOVA by Sign Table 
+```{r}
+total_yield = rep.data$Rep_1 + rep.data$Rep_2
+total.effect_X = apply(signtable[,-1], 2, function(x) x%*%total_yield)
+main.effect_X = round(total.effect_X/2^(k-1)/r,4)
+```
+For the SS values of ABC and ABCD, we must use only the data from the Replicate that each effect is *not* confounded in. For ABCD, we use replicate 2 to obtain SS. For ABC, we use replicate 1 to obtain SS. We also had to find SS_Block and SS_Block.within.rep. I summed the squared totals for each of the blocks and divided the entire term by 8 as there are 8 treatments per block. To obtain the SS of Blocks from within the Replicates, I subtracted SS_Rep from SS_Block. The following codes show the adjustments made to incorporate the confounding variables. 
+```{r}
+total.effect_Rep2 = apply(signtable[,-1], 2, function(x) x%*%rep.data$Rep_2)
+total.effect_ABCD = -0.169
+SS_ABCD = (total.effect_ABCD)^2 / 16
+total.effect_Rep1 = apply(signtable[,-1], 2, function(x) x%*%rep.data$Rep_1)
+total.effect_ABC = 24.689
+SS_ABC = (total.effect_ABC)^2 / 16
+SS_X = round((total.effect_X^2/2^k/r),4)
+SS_X[15] = SS_ABCD
+SS_X[11] = SS_ABC
+grand_total = sum(total_yield)
+replicate_sum1 <- sum(rep.data$Rep_1)
+replicate_sum2 <- sum(rep.data$Rep_2)
+SS_Rep = (sum(replicate_sum1^2 + replicate_sum2^2)/rep_size) - (grand_total^2/(2^k*r))
+b1_sum <- sum(obser.table$value1)
+b2_sum <- sum(obser.table$value2)
+b3_sum <- sum(obser.table$value3)
+b4_sum <- sum(obser.table$value4)
+SS_Block = (sum(b1_sum^2 + b2_sum^2 + b3_sum^2 + b4_sum^2)/8) - (grand_total^2/(2^k*r))
+SS_block.within.rep = SS_Block - SS_Rep
+SS_total = sum(rep.data$Rep_1^2 + rep.data$Rep_2^2) - (grand_total^2/32)
+SS_E = SS_total - (SS_Rep + SS_block.within.rep + sum(SS_X))
+pvalue = pf(q = (SS_X/1)/(1.2515/15), df1 = 1, df2 = 15)
+ANOVA.manual2 <- data.frame(VarSource = c(names(total.effect_X), "SS_Rep", "SS_Blocks.within.rep", "error", "total"), df = c(rep(1,15),1,2,13,31), SS = c(SS_X, SS_Rep, SS_block.within.rep, SS_E,SS_total)) %>%
+        mutate(MS = (SS/df)) %>%
+        mutate(F_obs = (MS/(SS_E/13))) %>%
+        mutate(Pvalue = pf(F_obs, df1 = 1, df2 = 13, lower.tail = F))
+ANOVA.manual2$F_obs[18:19] = NA
+ANOVA.manual2$Pvalue[18:19] = NA
+ANOVA.manual2$MS[19] = NA
+print(ANOVA.manual2, digits = 4)
+
+
+```
+
+### c. Recontructed ANOVA by R
+
+
+I again used the data.frame() function to fit a dataframe with blocks added this time. I fit a second model and constructed the ANOVA table for the model. 
+
+```{r}
+treat.combi <- data.frame(A = c(-1, 1, -1, 1, -1, 1, -1, 1, 
+                 -1, 1, -1, 1, -1, 1, -1, 1), B = c(-1, -1, 1, 1, -1, -1, 1, 1,
+                 -1, -1, 1, 1, -1, -1, 1, 1), C = c(-1, -1, -1, -1, 1, 1, 1, 1,
+                 -1, -1, -1, -1, 1, 1, 1, 1), D = c(-1, -1, -1, -1, -1, -1, -1, -1,
+                 1, 1, 1, 1, 1, 1, 1, 1))
+treat.combi$design <- design
+rep.12 <- data.frame(treat.combi, y = c(7.037,14.707,11.635,17.273,10.403,4.368,9.360,13.440,8.561,16.867,13.876,19.824,11.846,6.125,11.190,15.653))
+rep.22 <- data.frame(treat.combi, y = c(6.376,15.219,12.089,17.815,10.151,4.098,9.253,12.923,8.951,17.052,13.658,19.639,12.337,5.904,10.935,15.053))
+rep.bind2 = rbind(rep.12,rep.22)
+block = c(1,2,2,1,2,1,1,2,2,1,1,2,1,2,2,1,3,4,4,3,4,3,3,4,3,4,4,3,4,3,3,4)
+data.all3 <- data.frame(rep.bind2, rep = rep(c(1,2), each = 16), block)
+fit2 <- lm(y ~ A*B*C*D + rep + factor(block), data = data.all3)
+anova(fit2)
+```
+
+
+As we can see, the ANOVA tables from parts B and C match and give us our significant factors. 
+
+

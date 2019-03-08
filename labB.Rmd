@@ -1,0 +1,409 @@
+---
+title: "PSTAT 122 Lab B"
+author: "Jasmine Kellogg, 4266367"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+##1. Memory Experiment 
+### a. Assumption Check 
+```{r}
+memory.data <- read.table("/Users/Jasmine/desktop/memory.txt",header=TRUE)
+head(memory.data, n = 10)
+```
+```{r}
+options(contrasts=c("contr.sum","contr.poly"))
+memory.data$wordtype <- factor(memory.data$wordtype)
+memory.data$distract <- factor(memory.data$distract)
+fixed.fit <- lm(y ~ wordtype*distract, data = memory.data)
+plot(fixed.fit)
+```
+
+By looking at all the plots, there is slightly unequal variance as evident by the trumpet-like shape of the first plot, the data is normally distributed as seen by the plot of QQ Normal, independent, and there are a few possible outliers at data points 2, 3, and 5. 
+
+###b. Variance Stabilizing Transformation 
+
+In order to correct the unequal (increasing) variance, we have to transform Y. We first find the estimate of q by plotting the ln($s^2_i$) against ln($\bar{y}_i$).
+```{r}
+library(plyr)
+mean_treat <- ddply(memory.data, .(trtmt), summarize, mean = mean(y), sampvar = var(y))
+mean_treat
+transformplot <- plot(log(mean_treat$mean),log(mean_treat$sampvar), xlab = "ln(mean)", ylab = "ln(sampvar)")
+```
+
+Because all the y values are nonzero, we can use a log transformation of y.  
+After the tranformation, we see that the variance no longer megaphones, the residuals are more evenly distributed around y = 0. 
+```{r}
+fit_modified <- lm(log(y) ~ wordtype*distract, data=memory.data)
+plot(fit_modified)
+```
+
+### c. Fitting a Fixed Effects Model
+
+**Testing Transformed Data**
+```{r}
+options(contrast = c("contr.sum","contr.poly"))
+fit_modified
+summary(fit_modified)
+anova(fit_modified)
+```
+
+At an $\alpha$ = 0.05 level, there are significant main effects of word type and distraction type. Word type and distraction type have respective p-values of 0.0002517 and 0.0076378. Both are < 0.05 and thus, main effects are present. However, the p-value for the interaction term is 0.5177 which is > 0.05, so it is not significant. An interaction effect is not present.
+
+
+**Final Model in Terms of Original Responses:**
+
+$$Y_{ijk} = \mu + \alpha_i + \beta_j + (\alpha\beta)_{ij} + \epsilon_{ijk}, \quad i = 1,2,3 \quad j = 1,2,3 \quad k = 1,2,3$$ where $\epsilon_{ijk} \sim$ N(0, $\sigma^2$). 
+
+**Assumptions of Model:**
+
+* $\mu$ = overall mean 
+* $\alpha_i$ = main effect due to ith level of factor A (word type) 
+* $\beta_j$ = main effect due to jth level of factor B (type of distraction ) 
+* $(\alpha\beta)_{ij}$ = interaction due to the combination (i,j) of the two factors 
+
+**Hypotheses:**
+
+$H_0A$ : $\alpha_i$ = 0 for all i   vs   $H_1A$ : not all $\alpha_i$ are equal.
+
+$H_0B$ : $\beta_j$ = 0 for all j    vs   $H_1B$ : not all $\beta_j$ are equal.
+
+$H_0AB$ : $(\alpha\beta)_{ij}$ = 0 for all i,j    vs  $H_1AB$ : not all $(\alpha\beta)_{ij}$'s are equal.
+
+```{r}
+options(contrast = c("contr.sum","contr.poly"))
+fixed.fit <- lm(y ~ wordtype*distract, data = memory.data)
+anova(fixed.fit)
+
+```
+
+**Test Statistics:**
+```{r}
+qf(0.05,2,18,lower.tail = FALSE)
+```
+$F_\alpha;(a-1),ab(n-1)$ = 3.554557
+
+```{r}
+qf(0.05,2,18,lower.tail = FALSE)
+```
+$F_\alpha;(b-1),ab(n-1)$ = 3.554557
+
+```{r}
+qf(0.05,4,18,lower.tail = FALSE)
+```
+$F_\alpha;(a-1)(b-1),ab(n-1)$ = 2.927744
+
+**Decision Rule:**
+$\alpha$ : 12.1176 > 3.554557
+Thus, we reject $H_0A$. We conclude that not all $\alpha_i$ are equal. 
+
+$\beta$ : 6.0672 > 3.554557
+Thus, we reject $H_0B$. We conclude that not all $\beta_j$ are equal. 
+
+$(\alpha\beta)$ : 0.7479 < 2.927744
+Thus, we fail to reject $H_0AB$. We conclude that all $(\alpha\beta)_{ij}$ are equal. 
+
+**Interaction Plot:**
+```{r}
+interaction.plot(memory.data$wordtype,memory.data$distract,memory.data$y, xlab = "Level of Word Type", ylab = "Number of Words Remembered", trace.label = "Levels of Distraction Type")
+
+```
+
+From the interaction plot above, there seems to be a possible interaction between levels 2 and 3 of distraction type and word type as their lines slightly cross each other. There is no interaction between level 1 of distraction type and word type as the line for level 1 does not cross any others. 
+
+### d. Pairwise Comparison 
+Since we have multiple comparisons, we can use the Tukey method for multiple comparisons. From the previous part, we determined that the effects of word type and distraction type are significant on the transformed response variable. So we will test the individual differences between levels for each of these factors. 
+
+```{r}
+anova.fit <- aov(y ~ wordtype*distract, data = memory.data)
+TukeyHSD(anova.fit, "wordtype", ordered = TRUE, conf.level = 0.95)
+TukeyHSD(anova.fit, "distract", ordered = TRUE, conf.level = 0.95)
+```
+By looking at the confidence intervals for each contrast, we can determine the source of difference. For word type, there is a significant difference between levels 1 and 3, with level 1 being the "better" level. The differences between 2 and 3 as well as 1 and 2 are *not* significant as their intervals include 0.
+For distraction type, there is a significant difference between levels 1 and 3, level 1 also being "better". The differences between 2 and 3 as well as 1 and 2 are *not* significant as their intervals include 0.
+
+### e. Final(Modified) Model vs First Model
+```{r}
+fitted_first <- fixed.fit$fitted.values
+fitted_final <- fit_modified$fitted.values
+plot(x = fitted_first, y = fitted_final, xlab = "Fitted from First Model", ylab = "Fitted from Final Model")
+```
+
+As seen in the above graph, when comparing the final fitted values to the original fitted values, there is an upward(increasing) linear trend.
+
+
+
+##2. Survival Data 
+### a. Assumption Check 
+```{r}
+survival.data <- read.table("/Users/Jasmine/desktop/survival.txt",header=TRUE)
+head(survival.data, n = 10)
+
+```
+```{r}
+survival.data$poison <- factor(survival.data$poison)
+survival.data$trtmt <- factor(survival.data$trtmt)
+survival_model <- lm(time ~ poison*trtmt, data = survival.data)
+summary(survival_model)
+plot(survival_model)
+```
+
+By looking at the above plots, there is a very clear trumpet-like shape in the Residuals vs Fitted plot. This indicates that variance is not constant. There is also non-normality of the data as shown by the skewness on the tails of the Normal QQ Plot. There also appear to be a few outliers at data points 23, 24, and 30. 
+```{r}
+survival_modified <- lm(log(time) ~ poison*trtmt, data = survival.data)
+plot(survival_modified)
+```
+
+
+By using a log transformation of the response variable time, we are able to correct the non-normality and unequal variance in the data. There are however still outliers and to improve the data more, we could consider removing them from the analysis. 
+
+### b. Reciprocal Transformation 
+```{r}
+survival.data$recip <- 1/(survival.data$time)
+recip_model <- lm(recip ~ poison*trtmt, data = survival.data)
+head(recip_model)
+anova(recip_model)
+plot(recip_model)
+```
+With the transformed data, we now have values that represent "rates of dying". In the above plots, we can see that all the assumptions are met. There appears to be equal variance as all the data points are equally spread around y=0. There also appears to be a normal distribution as the points fall pretty evenly with no skewing in the QQ Plot. Finally, there do appear to be a few possible outliers at points 19, 20, and 32. Removal of these points could improve the fit of the model.
+
+
+### c. Interaction Plots 
+
+**Interaction for original data:**
+```{r}
+interaction.plot(survival.data$poison,survival.data$trtmt, survival.data$time, xlab = "Level of Poison", ylab = "Survival Time", trace.label = "Treatment Level")
+```
+
+**Interaction for Transformed Data:**
+```{r}
+survival.data$recip
+interaction.plot(survival.data$poison,survival.data$trtmt, survival.data$recip, xlab = "Level of Poison", ylab = "Rate of Dying", trace.label = "Treatment Level")
+
+```
+By looking at graph 1, none of the lines cross each other, they are all parallel or nearly paraller which indicates that there is no interaction effect between poison and trtmt on the response variable which is surival time. Graph 2 also has no interaction of lines and also therefore indicates no interaction between poison and trtmt on the response variable which is rate of dying. 
+
+
+
+
+##3. Two-way Measurement Experiment
+### a. Creating a Data Frame
+
+```{r machines}
+measure <- c(37,38,37,42,41,43,30,31,31,42,43,42,28,30,29,42,42,43,25,26,27,40,40,40,25,25,25,35,34,34,41,41,40,42,42,42,31,31,31,43,43,43,29,30,29,45,45,45,28,28,30,43,42,42,27,29,28,35,35,34,41,42,41,43,42,43,29,30,28,42,42,42,31,29,29,44,46,45,29,27,27,43,43,41,26,26,26,35,34,35)
+twoway.df.3 <- data.frame(measure = measure, partnum = factor(rep(rep(1:10), each = 3)), inspector = factor(rep(rep(1:3), each = 30)))
+head(twoway.df.3, n = 10)
+```
+### b. 2-way Fixed Effects Model
+$$Y_{ijk} = \mu + \alpha_i + \beta_j + (\alpha\beta)_{ij} + \epsilon_{ijk}, \quad i = 1,2,3,4,5,6,7,8,9,10, \quad j = 1,2,3, \quad k = 1,2,3$$ where $\epsilon_{ijk} \sim$ N(0, $\sigma^2$). 
+
+  **Assumptions of Model:**
+
+* $\mu$ = overall mean 
+* $\alpha_i$ = main effect due to ith level of part number 
+* $\beta_j$ = main effect due to jth level of inspector 
+* $(\alpha\beta)_{ij}$ = interaction due to the combination (i,j) of the two factors 
+* $\sigma^2$ = variance of random error 
+
+**Hypotheses:**
+
+$H_0A$ : $\alpha_i$ = 0 for all i   vs   $H_1A$ : not all $\alpha_i$ are equal.
+
+$H_0B$ : $\beta_j$ = 0 for all j    vs   $H_1B$ : not all $\beta_j$ are equal.
+
+$H_0AB$ : $(\alpha\beta)_{ij}$ = 0 for all i,j    vs  $H_1AB$ : not all $(\alpha\beta)_{ij}$'s are equal.
+
+**ANOVA Table**
+
+```{r}
+options(contrast = c("contr.sum","contr.poly"))
+lm.fit1 <- lm(measure ~ partnum*inspector, data = twoway.df.3)
+summary(lm.fit1)
+anova(lm.fit1)
+```
+
+**Test Statistics:**
+
+```{r}
+qf(0.05,9,60,lower.tail = FALSE)
+```
+$F_{\alpha;(a-1),ab(n-1)}$ = 2.040098
+
+```{r}
+qf(0.05,2,60,lower.tail = FALSE)
+```
+$F_{\alpha;(b-1),ab(n-1)}$ = 3.150411
+
+```{r}
+qf(0.05,18,60,lower.tail = FALSE)
+```
+$F_{\alpha;(a-1)(b-1),ab(n-1)}$ = 1.778446
+
+
+**Decision Rule:**
+
+$\alpha$ : 855.6425 > 2.040098  
+Thus, we reject $H_0A$. We conclude that not all $\alpha_i$ are equal. 
+
+
+$\beta$ : 38.4130 > 3.150411 
+
+Thus, we reject $H_0B$. We conclude that not all $\beta_j$ are equal. 
+
+$(\alpha\beta)$ : 5.2729 > 1.778446 
+   
+Thus, we reject $H_0AB$. We conclude that not all $(\alpha\beta)_{ij}$ are equal. 
+
+### c. Modification for Random Effects 
+
+**New Model** :
+
+$$Y_{ijk} = \mu + \alpha_i + \beta_j + (\alpha\beta)_{ij} + \epsilon_{ijk}, \quad i = 1,2,3,4,5,6,7,8,9,10, \quad j = 1,2,3, \quad k = 1,2,3$$ where $\epsilon_{ijk}\ \sim N(0, \sigma^2).$ 
+
+**Model Assumptions** :
+
+* $\mu$ = overall mean 
+* $\alpha_i$ = main effect due to ith level of part number A $\sim$ N(0,$\sigma^2_\alpha$)
+* $\beta_j$ = main effect due to jth level of inspector B $\sim$ N(0,$\sigma^2_\beta$)
+* $(\alpha\beta)_{ij}$ = interaction due to the combination (i,j) of the two factors $\sim$ N(0,$\sigma^2_{\alpha\beta}$)
+* $\sigma^2$ = variance of random error.
+* $\alpha_i, \beta_j, (\alpha\beta)_{ij}, \epsilon_{ijk}$ are all independent.
+
+
+**ANOVA Changes:** 
+
+With the modification to a random effects, the only change in the ANOVA table is in the test statistics and tabulated values. $F_A$ becomes $MSA / MSAB$ and $F_B$ becomes $MSB / MSAB$. For tabulated values, the F tabulated value for factor A becomes $F_{\alpha;(a-1),(a-1)(b-1)}$ and the F tabulated value for factor B becomes $F_{\alpha;(b-1),(a-1)(b-1)}$. The test statistic and F tabulated value for the interaction term remain the same.  
+
+```{r}
+fixed <- anova(lm.fit1)
+MSA <- fixed$`Mean Sq`[1]; df.msa <- fixed$Df[1]
+MSB <- fixed$`Mean Sq`[2]; df.msb <- fixed$Df[2]
+MSAB <- fixed$`Mean Sq`[3]; df.msab <- fixed$Df[3]
+MSE <- fixed$`Mean Sq`[4]; df.mse <- fixed$Df[4]
+random <- fixed
+random$`F value`[1:2] <- c(MSA/MSAB, MSB/MSAB)
+random$`Pr(>F)`[1] <- pf(random$`F value`[1], df1 = df.msa, df2 = df.msab, lower.tail = FALSE)
+random$`Pr(>F)`[2] <- pf(random$`F value`[2],df1 = df.msb, df2 = df.msab, lower.tail = FALSE)
+random
+```
+
+**New Hypotheses:**
+
+$H_0A$ : $\sigma^2_\alpha$ = 0  vs $\sigma^2_\alpha$ > 0. 
+
+$H_0B$ : $\sigma^2_\beta$ = 0   vs  $\sigma^2_\beta$>0.
+
+$H_0AB$ : $\sigma^2_{\alpha\beta}$ = 0   vs $\sigma^2_{\alpha\beta}$ > 0.
+
+**New Decisions:**
+
+Using the new test statistics and F tabulated values, we can make new decisions/conclusions. By looking at the p-values calculated, they are respectively 2.92e-15, 0.00481, 5.060e-07 for factors A, B, and (AB). All three are < 0.05 and thus significant. So, we reject *all* null hypotheses and accept *all* alternative hypotheses. In conclusion, $\sigma^2_\alpha$, $\sigma^2_\beta$, $\sigma^2_{\alpha\beta}$ are all > 0.
+
+
+### d. Variance Components
+
+There are four variance terms to estimate.
+$$\sigma^2, \sigma^2_\alpha, \sigma^2_\beta, \sigma^2_{\alpha\beta}$$
+Using the following code, we can find their estimates. 
+```{r}
+library(lme4)
+random.fit <- lmer(measure ~ (1 | partnum) + (1 | inspector) + (1 | partnum:inspector), data = twoway.df.3)
+summary(random.fit)
+
+```
+
+* $\sigma^2$ = 0.5111
+* $\sigma^2_\alpha$ = 48.2926
+* $\sigma^2_\beta$ = 0.5646
+* $\sigma^2_{\alpha\beta}$ = 0.7280
+
+
+### e. 2-way Mixed Effects Model 
+**Note: In the notation, I changed part number to be factor B and made inspector factor A.** 
+
+$$Y_{ijk} = \mu + \alpha_i + \beta_j + (\alpha\beta)_{ij} + \epsilon_{ijk}, \quad j = 1,2,3,4,5,6,7,8,9,10, \quad i = 1,2,3, \quad k = 1,2,3$$ where $\epsilon_{ijk} \sim$ N(0, $\sigma^2$). 
+
+**Model Assumptions** :
+
+* $\mu$ = overall mean 
+* $\alpha_i$ = fixed main effect due to ith level of inspector A $\sim$ N(0,$\sigma^2_\alpha$)
+* $\beta_j$ = random main effect due to jth level of factor B(part number), $\sum\limits_{j = 1}^b \beta_j = 0$ 
+* $(\alpha\beta)_{ij}$ = interaction due to the combination (i,j) of the two factors $\sim N(0,\frac{a-1}{a}\sigma_{\alpha\beta}^2)$
+* $\sigma^2$ = variance of random error.
+
+**Hypotheses**:
+
+$H_0A$ : $\alpha_i$ = 0 for all i vs at least one $\alpha_i$ is different. 
+
+$H_0B$ : $\sigma^2_\beta$ = 0 vs $\sigma^2_\beta$ > 0.
+
+$H_0AB$ : $\sigma^2_{\alpha\beta}$ = 0 vs $\sigma^2_{\alpha\beta}$ > 0.
+
+Because part number is the random effect and inspector is the fixed effect, we will modify the ANOVA values accordingly.
+```{r}
+mixed <- fixed
+mixed$`F value`[1:2] <- c(MSA/MSE, MSB/MSAB)
+mixed$`Pr(>F)`[1] <- pf(mixed$`F value`[1], df1 = df.msa, df2 = df.mse, lower.tail = FALSE)
+mixed$`Pr(>F)`[2] <- pf(mixed$`F value`[2], df1 = df.msb, df2 = df.msab, lower.tail = FALSE)
+mixed
+
+```
+
+
+**Decisions**:
+
+By looking at the p-values, they are as follows: 2.2e-16 for partnum, 0.00481 for inspector, and 5.06e-07 for the interaction term. All p-values are < 0.05 and thus, are significant. We can reject *all* null hypotheses are accept *all* alternative hypotheses. In conclusion, at least one $\alpha_i$ is different, $\sigma^2_\beta$ > 0, and $\sigma^2_{\alpha\beta}$ > 0. 
+
+### f. Estimation of Parameters
+
+There are three variance components, mean, and one fixed component to estimate. 
+
+$$ \mu, \alpha_i, \sigma^2_\beta, \sigma^2_{\alpha\beta}, \sigma^2 $$
+Using the following code, we can find their estimates.
+
+```{r}
+options(contrasts=c("contr.sum","contr.poly"))
+mixed.fit <- lmer(measure ~ inspector + (1 | partnum) + (1 | partnum:inspector), data = twoway.df.3)
+summary(mixed.fit)
+```
+
+Thus, the estimates are: 
+
+* $\mu$ = 35.8
+* $\alpha_1$ = -0.9, $\alpha_2$ = 0.6667, $\alpha_3$ = -(-0.9 + 0.6667) = 0.2333
+* $\sigma^2_\beta$ = 48.2926
+* $\sigma^2_{\alpha\beta}$ = 0.7280
+* $\sigma^2$ = 0.5111
+
+### g. Contrast 
+
+We want to compare inspector 1 to inspectors 2 and 3. 
+
+* Parameter of Interest: $\alpha_1 - \frac{1}{2}(\alpha_2 + \alpha_3)$
+* Point Estimation: $\bar{y}_{1..} - \frac{1}{2}(\bar{y}_{2..}+\bar{y}_{3..})$
+* Margin of error: $t_{\alpha/2;ab(n-1)}\times \sqrt{MSE\sum c_i^2/r}$
+* 1 - 0.05 confidence interval for $\alpha_1 - \frac{1}{2}(\alpha_2 + \alpha_3)$ is
+$$\bar{y}_{1..} - \frac{1}{2}(\bar{y}_{2..}+\bar{y}_{3..}) \pm t_{\alpha/2;ab(n-1)}\times \sqrt{MSE\sum c_i^2/r}$$
+```{r}
+library(plyr)
+mean_inspect <- ddply(twoway.df.3, .(inspector), summarize, mean = mean(measure))
+mean_inspect
+```
+```{r}
+mean23 <- (36.46667 + 36.03333)/2
+mean23
+```
+```{r}
+c(((34.90000 - mean23) - qt(p=0.05/2, df = 60, lower.tail = FALSE)*sqrt(0.51*0.05)), ((34.90000 - mean23) + qt(p=0.05/2, df = 60, lower.tail = FALSE)*sqrt(0.51*0.05)))
+```
+Thus, there is a significant difference between inspector 1 and the average of inspectors 2 and 3. Inspector 1 is significantly less than the average of inspectors 2 and 3.
+
+
+
+
+
